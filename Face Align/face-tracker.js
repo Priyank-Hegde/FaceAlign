@@ -1,40 +1,63 @@
-// Grid configuration (must match your generated images)
+// ================================
+// GRID CONFIG (must match images)
+// ================================
 const P_MIN = -15;
 const P_MAX = 15;
 const STEP = 3;
 const SIZE = 256;
 
+// ================================
+// HELPERS
+// ================================
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
 function quantizeToGrid(val) {
-  const raw = P_MIN + (val + 1) * (P_MAX - P_MIN) / 2; // [-1,1] -> [-15,15]
+  const raw = P_MIN + (val + 1) * (P_MAX - P_MIN) / 2;
   const snapped = Math.round(raw / STEP) * STEP;
   return clamp(snapped, P_MIN, P_MAX);
 }
 
 function sanitize(val) {
-  const str = Number(val).toFixed(1); // force one decimal, e.g. 0 -> 0.0
-  return str.replace('-', 'm').replace('.', 'p');
+  return String(val).replace('-', 'm').replace('.', 'p');
 }
 
 function gridToFilename(px, py) {
   return `gaze_px${sanitize(px)}_py${sanitize(py)}_${SIZE}.webp`;
 }
 
-function updateDebug(debugEl, x, y, filename) {
-  if (!debugEl) return;
-  debugEl.innerHTML = `Mouse: (${Math.round(x)}, ${Math.round(y)})<br/>Image: ${filename}`;
-}
+// ================================
+// GLOBAL POINTER ROUTING (SAFE)
+// ================================
+let activeTracker = null;
 
+window.addEventListener('mousemove', (e) => {
+  if (activeTracker) activeTracker(e.clientX, e.clientY);
+});
+
+window.addEventListener(
+  'touchmove',
+  (e) => {
+    if (!activeTracker) return;
+    if (e.touches && e.touches.length > 0) {
+      const t = e.touches[0];
+      activeTracker(t.clientX, t.clientY);
+    }
+  },
+  { passive: true }
+);
+
+// ================================
+// MAIN INITIALIZER
+// ================================
 function initializeFaceTracker(container) {
   const basePath = container.dataset.basePath || '/faces/';
   const showDebug = String(container.dataset.debug || 'false') === 'true';
 
   const img = document.createElement('img');
   img.className = 'face-image';
-  img.alt = 'Face following gaze';
+  img.alt = 'Face tracking';
   container.appendChild(img);
 
   let debugEl = null;
@@ -42,6 +65,14 @@ function initializeFaceTracker(container) {
     debugEl = document.createElement('div');
     debugEl.className = 'face-debug';
     container.appendChild(debugEl);
+  }
+
+  function updateDebug(x, y, filename) {
+    if (!debugEl) return;
+    debugEl.innerHTML = `
+      Mouse: (${Math.round(x)}, ${Math.round(y)})<br/>
+      Image: ${filename}
+    `;
   }
 
   function setFromClient(clientX, clientY) {
@@ -59,43 +90,44 @@ function initializeFaceTracker(container) {
     const py = quantizeToGrid(clampedY);
 
     const filename = gridToFilename(px, py);
-    const imagePath = `${basePath}${filename}`;
-    img.src = imagePath;
-    updateDebug(debugEl, clientX - rect.left, clientY - rect.top, filename);
+    img.src = `${basePath}${filename}`;
+
+    updateDebug(clientX - rect.left, clientY - rect.top, filename);
   }
-let trackingEnabled = false;
-  
-function handleMouseMove(e) {
-  if (!trackingEnabled) return;
-  setFromClient(e.clientX, e.clientY);
-}
 
-function handleTouchMove(e) {
-  if (!trackingEnabled) return;
+  // ================================
+  // HOVER / TOUCH GATING
+  // ================================
+  container.addEventListener('mouseenter', () => {
+    activeTracker = setFromClient;
+  });
 
-  if (e.touches && e.touches.length > 0) {
-    const t = e.touches[0];
-    setFromClient(t.clientX, t.clientY);
-  }
-}
+  container.addEventListener('mouseleave', () => {
+    activeTracker = null;
 
-  // Track pointer anywhere on the page
-container.addEventListener('mouseenter', () => {
-  trackingEnabled = true;
-});
+    // Smooth return to center
+    const rect = container.getBoundingClientRect();
+    setFromClient(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2
+    );
+  });
 
-container.addEventListener('mouseleave', () => {
-  trackingEnabled = false;
-});
-
-window.addEventListener('mousemove', handleMouseMove);
-window.addEventListener('touchmove', handleTouchMove, { passive: true });
-
-  // Initialize at center
+  // ================================
+  // INITIAL STATE (CENTER)
+  // ================================
   const rect = container.getBoundingClientRect();
-  setFromClient(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  setFromClient(
+    rect.left + rect.width / 2,
+    rect.top + rect.height / 2
+  );
 }
 
+// ================================
+// BOOTSTRAP
+// ================================
 document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('.face-tracker').forEach((el) => initializeFaceTracker(el));
+  document
+    .querySelectorAll('.face-tracker')
+    .forEach((el) => initializeFaceTracker(el));
 });

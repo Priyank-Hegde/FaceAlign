@@ -1,5 +1,5 @@
 // ================================
-// GRID CONFIG (must match images)
+// GRID CONFIG
 // ================================
 const P_MIN = -15;
 const P_MAX = 15;
@@ -9,8 +9,8 @@ const SIZE = 256;
 // ================================
 // HELPERS
 // ================================
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
 }
 
 function quantizeToGrid(val) {
@@ -28,28 +28,61 @@ function gridToFilename(px, py) {
 }
 
 // ================================
-// GLOBAL POINTER ROUTING (SAFE)
+// GLOBAL STATE
 // ================================
-let activeTracker = null;
+let activeContainer = null;
+let activeSetter = null;
 
+// ================================
+// GLOBAL POINTER LISTENERS
+// ================================
 window.addEventListener('mousemove', (e) => {
-  if (activeTracker) activeTracker(e.clientX, e.clientY);
+  if (!activeContainer || !activeSetter) return;
+
+  const rect = activeContainer.getBoundingClientRect();
+  const x = e.clientX;
+  const y = e.clientY;
+
+  // 🔒 HARD BOUNDARY CHECK
+  if (
+    x < rect.left ||
+    x > rect.right ||
+    y < rect.top ||
+    y > rect.bottom
+  ) {
+    return;
+  }
+
+  activeSetter(x, y);
 });
 
 window.addEventListener(
   'touchmove',
   (e) => {
-    if (!activeTracker) return;
-    if (e.touches && e.touches.length > 0) {
-      const t = e.touches[0];
-      activeTracker(t.clientX, t.clientY);
+    if (!activeContainer || !activeSetter) return;
+    if (!e.touches || e.touches.length === 0) return;
+
+    const t = e.touches[0];
+    const rect = activeContainer.getBoundingClientRect();
+    const x = t.clientX;
+    const y = t.clientY;
+
+    if (
+      x < rect.left ||
+      x > rect.right ||
+      y < rect.top ||
+      y > rect.bottom
+    ) {
+      return;
     }
+
+    activeSetter(x, y);
   },
   { passive: true }
 );
 
 // ================================
-// MAIN INITIALIZER
+// INITIALIZER
 // ================================
 function initializeFaceTracker(container) {
   const basePath = container.dataset.basePath || '/faces/';
@@ -57,7 +90,6 @@ function initializeFaceTracker(container) {
 
   const img = document.createElement('img');
   img.className = 'face-image';
-  img.alt = 'Face tracking';
   container.appendChild(img);
 
   let debugEl = null;
@@ -67,45 +99,42 @@ function initializeFaceTracker(container) {
     container.appendChild(debugEl);
   }
 
-  function updateDebug(x, y, filename) {
-    if (!debugEl) return;
-    debugEl.innerHTML = `
-      Mouse: (${Math.round(x)}, ${Math.round(y)})<br/>
-      Image: ${filename}
-    `;
-  }
-
   function setFromClient(clientX, clientY) {
     const rect = container.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
 
-    const nx = (clientX - centerX) / (rect.width / 2);
-    const ny = (centerY - clientY) / (rect.height / 2);
+    const nx = (clientX - cx) / (rect.width / 2);
+    const ny = (cy - clientY) / (rect.height / 2);
 
-    const clampedX = clamp(nx, -1, 1);
-    const clampedY = clamp(ny, -1, 1);
-
-    const px = quantizeToGrid(clampedX);
-    const py = quantizeToGrid(clampedY);
+    const px = quantizeToGrid(clamp(nx, -1, 1));
+    const py = quantizeToGrid(clamp(ny, -1, 1));
 
     const filename = gridToFilename(px, py);
     img.src = `${basePath}${filename}`;
 
-    updateDebug(clientX - rect.left, clientY - rect.top, filename);
+    if (debugEl) {
+      debugEl.innerHTML = `
+        x:${Math.round(clientX - rect.left)} 
+        y:${Math.round(clientY - rect.top)}<br/>
+        ${filename}
+      `;
+    }
   }
 
   // ================================
-  // HOVER / TOUCH GATING
+  // ACTIVATE / DEACTIVATE
   // ================================
-  container.addEventListener('mouseenter', () => {
-    activeTracker = setFromClient;
+  container.addEventListener('pointerenter', () => {
+    activeContainer = container;
+    activeSetter = setFromClient;
   });
 
-  container.addEventListener('mouseleave', () => {
-    activeTracker = null;
+  container.addEventListener('pointerleave', () => {
+    activeContainer = null;
+    activeSetter = null;
 
-    // Smooth return to center
+    // return to center
     const rect = container.getBoundingClientRect();
     setFromClient(
       rect.left + rect.width / 2,
@@ -113,9 +142,7 @@ function initializeFaceTracker(container) {
     );
   });
 
-  // ================================
-  // INITIAL STATE (CENTER)
-  // ================================
+  // initial center
   const rect = container.getBoundingClientRect();
   setFromClient(
     rect.left + rect.width / 2,
@@ -129,5 +156,5 @@ function initializeFaceTracker(container) {
 document.addEventListener('DOMContentLoaded', () => {
   document
     .querySelectorAll('.face-tracker')
-    .forEach((el) => initializeFaceTracker(el));
+    .forEach(initializeFaceTracker);
 });

@@ -63,21 +63,33 @@ function initializeFaceTracker(container) {
     img.src = imagePath;
     updateDebug(debugEl, clientX - rect.left, clientY - rect.top, filename);
   }
+let trackingEnabled = false;
+  
+function handleMouseMove(e) {
+  if (!trackingEnabled) return;
+  setFromClient(e.clientX, e.clientY);
+}
 
-  function handleMouseMove(e) {
-    setFromClient(e.clientX, e.clientY);
-  }
+function handleTouchMove(e) {
+  if (!trackingEnabled) return;
 
-  function handleTouchMove(e) {
-    if (e.touches && e.touches.length > 0) {
-      const t = e.touches[0];
-      setFromClient(t.clientX, t.clientY);
-    }
+  if (e.touches && e.touches.length > 0) {
+    const t = e.touches[0];
+    setFromClient(t.clientX, t.clientY);
   }
+}
 
   // Track pointer anywhere on the page
-  window.addEventListener('mousemove', handleMouseMove);
-  window.addEventListener('touchmove', handleTouchMove, { passive: true });
+container.addEventListener('mouseenter', () => {
+  trackingEnabled = true;
+});
+
+container.addEventListener('mouseleave', () => {
+  trackingEnabled = false;
+});
+
+window.addEventListener('mousemove', handleMouseMove);
+window.addEventListener('touchmove', handleTouchMove, { passive: true });
 
   // Initialize at center
   const rect = container.getBoundingClientRect();
